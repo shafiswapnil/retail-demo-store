@@ -103,9 +103,9 @@
           :explainRecommended="explainRecommended"
           :recommendedProducts="productRecommended"
           :feature="feature"
-          class="mt-4"
+          class="mt-5"
       >
-        <template #heading>Compare similar items</template>
+        <template #heading>Compare similar items <DemoGuideBadge :article="demoGuideBadgeArticle" hideTextOnSmallScreens></DemoGuideBadge></template>
       </RecommendedProductsSection>
 
     </div>
@@ -121,6 +121,8 @@ import RecommendedProductsSection from "@/components/RecommendedProductsSection/
 import {AnalyticsHandler} from "@/analytics/AnalyticsHandler";
 import {formatPrice} from "@/util/formatPrice";
 import {discountProductPrice} from "@/util/discountProductPrice";
+import { Articles } from '@/partials/AppModal/DemoGuide/config';
+import DemoGuideBadge from '@/components/DemoGuideBadge/DemoGuideBadge';
 
 const ProductsRepository = RepositoryFactory.get('products');
 const RecommendationsRepository = RepositoryFactory.get('recommendations');
@@ -137,9 +139,11 @@ export default {
   components: {
     Layout,
     RecommendedProductsSection,
+    DemoGuideBadge,
   },
   data() {
     return {
+      demoGuideBadgeArticle: Articles.SIMILAR_ITEM_RECOMMENDATIONS,
       streamDetails: [],
       activeStreamId: 0,
       productDetails: [],
@@ -174,6 +178,9 @@ export default {
       return data;
     },
     async getRelatedProducts() {
+      this.explainRecommended = null;
+      this.productRecommended = null;
+
       const response = await RecommendationsRepository.getRelatedProducts(
           this.personalizeUserID ?? '',
           this.activeProductId,
@@ -300,6 +307,9 @@ export default {
         document.getElementById('featured-products-scrollable').scrollTop = featuredProductElement.offsetTop;
       }
     },
+    personalizeUserID() {
+      this.getRelatedProducts()
+    }
   }
 }
 </script>

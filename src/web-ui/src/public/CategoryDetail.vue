@@ -1,21 +1,62 @@
 <template>
-  <Layout>
+  <Layout :isLoading="!products.length">
     <div class="content">
-
-      <!-- Loading Indicator -->
-      <div class="container mb-4" v-if="!products.length">
-        <i class="fas fa-spinner fa-spin fa-3x"></i>
-      </div>
 
       <!-- Product List -->
       <div class="container mt-3" v-if="products.length">
-        <h4>{{ this.display | capitalize }}</h4>
-        <div v-if="explain_recommended" class="text-muted text-center">
+        <h2 class="text-left">{{ this.display | capitalize }}</h2>
+        <div v-if="explain_recommended" class="text-muted text-left">
           <small><em><i v-if="active_experiment" class="fa fa-balance-scale"></i><i v-if="personalized" class="fa fa-user-check"></i> {{ explain_recommended }}</em></small>
         </div>
-        <div class="row">
-          <div class="card-deck col-sm-12 col-md-12 col-lg-12 mt-4">
-            <Product v-for="product in products" 
+
+        <div class="mt-4 d-flex flex-column flex-lg-row">
+          <div class="filters mb-4 mb-lg-4 mr-lg-4 text-left">
+            <h4 class="bg-light p-2">Filters</h4>
+            <div class="gender-filter-border">
+              <a
+                class="filter-title mb-1 mt-1"
+                data-toggle="collapse"
+                data-target="#gender-filter"
+                :aria-expanded="!isInitiallyMobile"
+                aria-controls="gender-filter"
+              >
+                <i class="chevron fa fa-chevron-up ml-2"></i>
+                Gender
+              </a>
+              <div :class="['collapse', isInitiallyMobile ? 'hide' : 'show']" id="gender-filter" ref="genderCollapse">
+                <div class="p-1 pl-2" v-for="gender in [ 'M', 'F' ]" v-bind:key="gender">
+                  <label class="mb-1">
+                    <input class="mr-1" type="checkbox" :value="gender" v-model="selectedGenders">
+                    {{ { M: 'Male', F: 'Female'}[gender] }}
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <a
+                class="filter-title mb-1 mt-1"
+                data-toggle="collapse"
+                data-target="#style-filter"
+                :aria-expanded="!isInitiallyMobile"
+                aria-controls="style-filter"
+              >
+                <i class="chevron fa fa-chevron-up ml-2"></i>
+                Styles
+              </a>
+              <div :class="['collapse', isInitiallyMobile ? 'hide' : 'show']" id="style-filter" ref="styleCollapse">
+                <div class="p-1 pl-2" v-for="style in styles" v-bind:key="style">
+                  <label class="mb-0">
+                    <input class="mr-1" type="checkbox"  :value="style" v-model="selectedStyles">
+                    {{style | capitalize}}
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="products">
+            <Product v-for="product in filteredProducts"
               v-bind:key="product.id"
               :product="product"
               :experiment="product.experiment"
@@ -25,7 +66,7 @@
         </div>
       </div>
 
-    </div> 
+    </div>
   </Layout>
 </template>
 
@@ -54,22 +95,34 @@ export default {
     return {
       feature: ExperimentFeature,
       products: [],
-      categories: [],
       errors: [],
       display: '',
       explain_recommended: '',
       active_experiment: false,
-      personalized: false
+      personalized: false,
+      selectedGenders: [],
+      selectedStyles: [],
+      isInitiallyMobile: window.matchMedia('(max-width: 992px)').matches
     }
   },
-  async created () {
+  created () {
     this.fetchData()
-    this.getCategories()
+  },
+  mounted() {
+    this.mediaQueryList = window.matchMedia('(max-width: 992px)');
+
+    // eslint-disable-next-line no-undef
+    this.listener = () => $([this.$refs.genderCollapse, this.$refs.styleCollapse]).collapse(this.mediaQueryList.matches ? 'hide' : 'show');
+
+    this.mediaQueryList.addEventListener('change', this.listener);
+  },
+  beforeDestroy() {
+    this.mediaQueryList.removeEventListener('change', this.listener);
   },
   methods: {
     async fetchData (){
       this.getProductsByCategory(this.$route.params.id)
-    }, 
+    },
     async getProductsByCategory(categoryName) {
       let intermediate = null
       if (categoryName == 'featured') {
@@ -106,18 +159,35 @@ export default {
       }
 
       this.display = categoryName
-    },
-    async getCategories () {
-      const { data } = await ProductsRepository.getCategories()
-      this.categories = data
     }
   },
   computed: {
-    user() { 
+    user() {
       return AmplifyStore.state.user
     },
     personalizeUserID() {
       return AmplifyStore.getters.personalizeUserID
+    },
+    styles() {
+      const styles = this.products.map(product => product.style)
+      const uniqueStyles = styles.filter((style, index, styles) => styles.indexOf(style) === index).sort()
+      return uniqueStyles
+    },
+    filteredProducts() {
+      let products = this.products
+
+      const selectedStyles = this.selectedStyles
+      const selectedGenders = this.selectedGenders
+
+      if (selectedStyles.length) {
+        products = products.filter(product => selectedStyles.includes(product.style))
+      }
+
+      if (selectedGenders.length) {
+        products = products.filter(product => selectedGenders.includes(product.gender_affinity) || !product.gender_affinity)
+      }
+
+      return products
     }
   },
   filters: {
@@ -139,11 +209,41 @@ export default {
     padding-top: 1rem;
   }
 
-  .carousel {
-    max-height: 600px;
+  .products {
+    flex: 1;
+    align-self: center;
+    display: grid;
+    grid-gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr) ) ;
   }
 
-  .carousel-item {
-    max-height: 600px;
+  .filter-title {
+    font-size: 1.2em;
+    font-weight: 500;
+    cursor: pointer;
+    display: block;
+  }
+
+  .chevron {
+    transform: rotate(180deg);
+    transition: transform 150ms ease-in-out;
+    font-size: 1.15rem;
+  }
+  [aria-expanded='true'] > .chevron {
+    transform: rotate(0deg);
+  }
+
+  .gender-filter-border {
+    border-bottom: 1px solid var(--grey-300);
+  }
+
+  @media(min-width: 992px) {
+    .filters {
+      width: 300px;
+    } 
+
+    .products {
+      align-self: flex-start;
+    }
   }
 </style>
