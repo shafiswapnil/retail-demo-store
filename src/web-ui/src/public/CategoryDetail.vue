@@ -1,18 +1,16 @@
 <template>
   <Layout :isLoading="!products.length">
-    <div class="content">
-
       <!-- Product List -->
-      <div class="container mt-3" v-if="products.length">
-        <h2 class="text-left">{{ this.display | capitalize }}</h2>
-        <div v-if="explain_recommended" class="text-muted text-left">
-          <small><em><i v-if="active_experiment" class="fa fa-balance-scale"></i><i v-if="personalized" class="fa fa-user-check"></i> {{ explain_recommended }}</em></small>
+      <div class="container" v-if="products.length">
+        <h2 class="text-left">{{ this.display | capitalize }} <DemoGuideBadge v-if="demoGuideBadgeArticle" :article="demoGuideBadgeArticle" hideTextOnSmallScreens></DemoGuideBadge></h2>
+        <div v-if="experiment" class="text-muted text-left">
+          <small><em><i v-if="experiment" class="fa fa-balance-scale"></i> {{ experiment }}</em></small>
         </div>
 
         <div class="mt-4 d-flex flex-column flex-lg-row">
           <div class="filters mb-4 mb-lg-4 mr-lg-4 text-left">
             <h4 class="bg-light p-2">Filters</h4>
-            <div class="gender-filter-border">
+            <div class="gender-filter-border" v-if="showGenderFilter">
               <a
                 class="filter-title mb-1 mt-1"
                 data-toggle="collapse"
@@ -65,19 +63,19 @@
           </div>
         </div>
       </div>
-
-    </div>
   </Layout>
 </template>
 
 <script>
-import AmplifyStore from '@/store/store'
+import {mapState, mapGetters} from 'vuex'
 
 import { RepositoryFactory } from '@/repositories/RepositoryFactory'
 import { AnalyticsHandler } from '@/analytics/AnalyticsHandler'
 
-import Product from './components/Product.vue'
+import Product from '@/components/Product/Product'
 import Layout from '@/components/Layout/Layout'
+import DemoGuideBadge from '@/components/DemoGuideBadge/DemoGuideBadge';
+import { getDemoGuideArticleFromPersonalizeARN } from '@/partials/AppModal/DemoGuide/config';
 
 const ProductsRepository = RepositoryFactory.get('products')
 const RecommendationsRepository = RepositoryFactory.get('recommendations')
@@ -90,16 +88,16 @@ export default {
   components: {
     Product,
     Layout,
+    DemoGuideBadge
   },
   data() {
     return {
       feature: ExperimentFeature,
+      demoGuideBadgeArticle: null,
+      experiment: null,
       products: [],
       errors: [],
       display: '',
-      explain_recommended: '',
-      active_experiment: false,
-      personalized: false,
       selectedGenders: [],
       selectedStyles: [],
       isInitiallyMobile: window.matchMedia('(max-width: 992px)').matches
@@ -111,8 +109,12 @@ export default {
   mounted() {
     this.mediaQueryList = window.matchMedia('(max-width: 992px)');
 
-    // eslint-disable-next-line no-undef
-    this.listener = () => $([this.$refs.genderCollapse, this.$refs.styleCollapse]).collapse(this.mediaQueryList.matches ? 'hide' : 'show');
+    this.listener = () => {
+      const collapseElements = this.showGenderFilter ? [this.$refs.genderCollapse, this.$refs.styleCollapse] : [this.$refs.styleCollapse]
+
+      // eslint-disable-next-line no-undef
+      $(collapseElements).collapse(this.mediaQueryList.matches ? 'hide' : 'show')
+    };
 
     this.mediaQueryList.addEventListener('change', this.listener);
   },
@@ -124,6 +126,9 @@ export default {
       this.getProductsByCategory(this.$route.params.id)
     },
     async getProductsByCategory(categoryName) {
+      this.demoGuideBadgeArticle = null
+      this.experiment = null
+
       let intermediate = null
       if (categoryName == 'featured') {
         const { data } = await ProductsRepository.getFeatured()
@@ -137,15 +142,14 @@ export default {
       if (this.personalizeUserID && intermediate.length > 0) {
         const response = await RecommendationsRepository.getRerankedItems(this.personalizeUserID, intermediate, ExperimentFeature)
 
+
         if (response.headers) {
-          if (response.headers['x-personalize-recipe']) {
-            this.personalized = true
-            this.explain_recommended = 'Personalize recipe: ' + response.headers['x-personalize-recipe']
-          }
-          if (response.headers['x-experiment-name']) {
-            this.active_experiment = true
-            this.explain_recommended = 'Active experiment: ' + response.headers['x-experiment-name']
-          }
+          const personalizeRecipe = response.headers['x-personalize-recipe'];
+          const experimentName = response.headers['x-experiment-name'];
+
+          if (personalizeRecipe) this.demoGuideBadgeArticle = getDemoGuideArticleFromPersonalizeARN(personalizeRecipe);
+
+          if (experimentName) this.experiment = `Active experiment: ${experimentName}`
         }
 
         this.products = response.data.slice(0, MaxProducts)
@@ -162,11 +166,14 @@ export default {
     }
   },
   computed: {
-    user() {
-      return AmplifyStore.state.user
-    },
-    personalizeUserID() {
-      return AmplifyStore.getters.personalizeUserID
+    ...mapState({user: state => state.user, categories: state => state.categories.categories}),
+    ...mapGetters(['personalizeUserID']),
+    showGenderFilter() {
+      const category = this.categories?.find(category => category.name === this.$route.params.id);
+
+      if (!category) return false;
+
+      return category.has_gender_affinity;
     },
     styles() {
       const styles = this.products.map(product => product.style)
@@ -205,10 +212,6 @@ export default {
 </script>
 
 <style scoped>
-  .content {
-    padding-top: 1rem;
-  }
-
   .products {
     flex: 1;
     align-self: center;
